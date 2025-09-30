@@ -19,7 +19,22 @@ export default function App() {
 
   const [chartType, setChartType] = useState('Pie');
 
-  // Calculate totals
+  // Totals per sector & FY
+  const totalsByFY = useMemo(() => {
+    const data = {};
+    projects.forEach(p => {
+      if (!data[p.fy]) {
+        data[p.fy] = {};
+        SECTORS.forEach(s => data[p.fy][s] = 0);
+      }
+      SECTORS.forEach(s => {
+        data[p.fy][s] += ((p.allocations[s] || 0) / 100) * (parseFloat(p.budget) || 0);
+      });
+    });
+    return data;
+  }, [projects]);
+
+  // Current totals (all FY combined)
   const totals = useMemo(() => {
     const out = {};
     let grand = 0;
@@ -39,7 +54,27 @@ export default function App() {
     percent: totals.grand > 0 ? (totals.out[s] / totals.grand) * 100 : 0,
   }));
 
-  // Project table editing
+  const barData = Object.keys(totalsByFY).map(fy => {
+    const row = { fy };
+    SECTORS.forEach(s => {
+      const totalFY = Object.values(totalsByFY[fy]).reduce((a, b) => a + b, 0);
+      row[s] = totalFY > 0 ? (totalsByFY[fy][s] / totalFY) * 100 : 0;
+    });
+    return row;
+  });
+
+  const lineData = SECTORS.map(s => ({
+    sector: s,
+    data: Object.keys(totalsByFY).map(fy => ({
+      fy,
+      percent: (() => {
+        const totalFY = Object.values(totalsByFY[fy]).reduce((a, b) => a + b, 0);
+        return totalFY > 0 ? (totalsByFY[fy][s] / totalFY) * 100 : 0;
+      })()
+    }))
+  }));
+
+  // Table Editing
   const updateProject = (index, field, value) => {
     const newProjects = [...projects];
     newProjects[index][field] = value;
@@ -64,9 +99,77 @@ export default function App() {
 
   return (
     <div style={{ padding: 20, fontFamily: 'Arial, sans-serif' }}>
-      <h2>MCC Allocation Driver — Step 4 (Editable + Graphs)</h2>
+      <h2>MCC Allocation Driver — Step 4</h2>
 
-      {/* Project Table */}
+      {/* Top row: Summary + Chart */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 30 }}>
+        {/* Summary Table */}
+        <div style={{ flex: 1, marginRight: 20 }}>
+          <h3>Summary (All FYs)</h3>
+          <table border="1" cellPadding="6" style={{ borderCollapse: 'collapse', width: '100%' }}>
+            <thead>
+              <tr>
+                <th>Sector</th>
+                <th>Actual %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SECTORS.map((s) => (
+                <tr key={s}>
+                  <td>{s}</td>
+                  <td>{sectorData.find(d => d.sector === s).percent.toFixed(1)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Chart Panel */}
+        <div style={{ flex: 1 }}>
+          <h3>Charts</h3>
+          <label>Select Chart: </label>
+          <select value={chartType} onChange={e => setChartType(e.target.value)}>
+            <option>Pie</option>
+            <option>Bar</option>
+            <option>Line</option>
+          </select>
+          <ResponsiveContainer width="100%" height={300}>
+            {chartType === 'Pie' && (
+              <PieChart>
+                <Pie data={sectorData} dataKey="value" nameKey="sector" cx="50%" cy="50%" outerRadius={100} label>
+                  {sectorData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                </Pie>
+                <Tooltip formatter={(value) => `$${value.toFixed(0)}`} />
+              </PieChart>
+            )}
+            {chartType === 'Bar' && (
+              <BarChart data={barData}>
+                <XAxis dataKey="fy" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                {SECTORS.map((s, i) => (
+                  <Bar key={s} dataKey={s} stackId="a" fill={COLORS[i % COLORS.length]} />
+                ))}
+              </BarChart>
+            )}
+            {chartType === 'Line' && (
+              <LineChart>
+                <XAxis dataKey="fy" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                {lineData.map((line) => (
+                  <Line key={line.sector} data={line.data} dataKey="percent" name={line.sector} stroke={COLORS[SECTORS.indexOf(line.sector) % COLORS.length]} />
+                ))}
+              </LineChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Allocation Table */}
+      <h3>Allocation Table</h3>
       <button onClick={addProject} style={{ marginBottom: 10 }}>+ Add Project</button>
       <table border="1" cellPadding="6" style={{ borderCollapse: 'collapse', width: '100%', marginBottom: 30 }}>
         <thead>
@@ -115,45 +218,11 @@ export default function App() {
         </tbody>
       </table>
 
-      {/* Chart Selector */}
-      <div style={{ marginBottom: 20 }}>
-        <label>Select Chart Type: </label>
-        <select value={chartType} onChange={e => setChartType(e.target.value)}>
-          <option>Pie</option>
-          <option>Bar</option>
-          <option>Line</option>
-        </select>
+      {/* Geo Heatmap Placeholder */}
+      <h3>Geo Heatmap of Allocations (Coming Soon)</h3>
+      <div style={{ height: 200, background: '#f0f0f0', textAlign: 'center', lineHeight: '200px' }}>
+        [Map Placeholder]
       </div>
-
-      {/* Chart Display */}
-      <ResponsiveContainer width="100%" height={400}>
-        {chartType === 'Pie' && (
-          <PieChart>
-            <Pie data={sectorData} dataKey="value" nameKey="sector" cx="50%" cy="50%" outerRadius={150} label>
-              {sectorData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-            </Pie>
-            <Tooltip formatter={(value, name, props) => [`$${value.toFixed(0)}`, name]} />
-          </PieChart>
-        )}
-        {chartType === 'Bar' && (
-          <BarChart data={sectorData}>
-            <XAxis dataKey="sector" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Bar dataKey="percent" fill="#8884d8" name="Actual %" />
-          </BarChart>
-        )}
-        {chartType === 'Line' && (
-          <LineChart data={sectorData}>
-            <XAxis dataKey="sector" />
-            <YAxis />
-            <Tooltip />
-            <Legend />
-            <Line type="monotone" dataKey="percent" stroke="#82ca9d" />
-          </LineChart>
-        )}
-      </ResponsiveContainer>
     </div>
   );
 }
